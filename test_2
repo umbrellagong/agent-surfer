@@ -1,0 +1,170 @@
+# 1. Model Setup (your assumption)
+
+You are effectively assuming:
+
+[
+\eta_{k,t} = \alpha_k + \theta^\top X_t
+]
+
+* (k): tenure
+* (t): time
+* (X_t): **MEV + monthly indicators (treated together)**
+* (\theta): **shared across tenure**
+
+Probability:
+
+[
+p_{k,t} = \sigma(\eta_{k,t})
+]
+
+---
+
+# 2. What this implies (key theoretical results)
+
+## (A) Logit scale
+
+[
+\text{std}*t(\eta*{k,t}) = \text{std}_t(\theta^\top X_t)
+]
+
+👉 **Same for all tenure**
+
+---
+
+## (B) Probability scale (low default rate <1%)
+
+Using approximation:
+
+[
+p_{k,t} \approx \exp(\alpha_k)\exp(\theta^\top X_t)
+]
+
+So:
+
+[
+\text{std}*t(p*{k,t}) \propto \text{mean}*t(p*{k,t})
+]
+
+and:
+
+[
+CV_k = \frac{\text{std}}{\text{mean}} \approx \text{constant}
+]
+
+👉 **Expected pattern under your assumption:**
+
+* mean ↑ ⇒ std ↑ (proportional)
+* CV ≈ stable across tenure
+
+---
+
+# 3. What you observed
+
+You stated:
+
+* default rate <1%
+* **mean varies a lot across tenure**
+* **std is relatively stable across tenure**
+* ⇒ CV varies a lot (e.g., 2 → 0.5)
+
+---
+
+# 4. Core contradiction
+
+Under your model, you should see:
+
+> std ∝ mean
+
+But you observe:
+
+> std ≈ constant, mean varies
+
+This implies:
+
+[
+CV_k = \frac{std}{mean} \text{ varies a lot}
+]
+
+❌ This **violates the shared linear logit MEV assumption**
+
+---
+
+# 5. What this implies (diagnosis)
+
+Your data suggests at least one of the following:
+
+## (1) Tenure-specific sensitivity (most likely)
+
+[
+\eta_{k,t} = \alpha_k + \theta_k^\top X_t
+]
+
+👉 Different tenure reacts differently to MEV / time
+
+---
+
+## (2) Temporal variation is not logit-multiplicative
+
+Instead of:
+
+[
+p_{k,t} \propto \exp(\theta^\top X_t)
+]
+
+You may have something closer to:
+
+[
+p_{k,t} = \bar p_k + \delta_t
+]
+
+👉 **additive variation on probability scale**
+
+→ produces **similar std across tenure**
+
+---
+
+## (3) Monthly effects dominate and are effectively additive
+
+Even if modeled in logit:
+
+* downstream adjustments / aggregation / calibration
+  may make variation behave like additive noise
+
+---
+
+## (4) Noise / measurement effect (less likely but possible)
+
+Low-rate segments can distort CV, but your pattern (stable std) suggests structure, not noise.
+
+---
+
+# 6. Interpretation in plain language
+
+* Your original hypothesis:
+
+  > “If MEV effect is linear, CV should be stable”
+
+  ✔ Correct **under strict assumptions**
+
+* Your data says:
+
+  > “CV is not stable”
+
+  ⇒ therefore:
+
+> **Temporal variation is not coming from a shared linear logit driver**
+
+---
+
+# 7. Practical takeaway
+
+You can use this as a diagnostic rule:
+
+> If default rate is low (<1%) and CV is stable across tenure → consistent with shared logit-linear effect
+> If CV varies significantly → implies heterogeneous sensitivity or non-multiplicative dynamics
+
+---
+
+# 8. One-line conclusion
+
+> Your observation (stable std but very different means) is strong evidence that different tenure segments respond differently to time/MEV, or that temporal variation behaves more like additive noise on the probability scale rather than a shared multiplicative (logit-linear) effect.
