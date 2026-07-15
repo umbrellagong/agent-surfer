@@ -1,0 +1,384 @@
+# Local Development → Databricks Remote Run 工作流
+
+## 目标
+
+使用 Local 作为唯一 Source of Truth。
+
+Agent 在 Local 修改代码，然后将变更同步到 Databricks Workspace，并在 Remote 执行代码。
+
+整体循环：
+
+```text
+Local Modify
+→ Sync
+→ Remote Run
+→ Inspect Result
+→ Local Modify
+→ Sync
+→ Remote Run
+```
+
+---
+
+## 基本原则
+
+* 所有代码修改只发生在 Local。
+* Remote 只负责运行，不作为代码编辑来源。
+* 每次 Remote Run 前必须先完成 Sync。
+* Sync 成功后才能触发 Remote Run。
+* Remote 不应被人工修改。
+* Local 是唯一可信版本。
+
+---
+
+## 推荐同步策略
+
+使用一个 Manifest 文件记录上一次成功同步时的 Local 文件状态。
+
+Manifest 示例：
+
+```json
+{
+  "version": 1,
+  "files": {
+    "src/main.py": {
+      "sha256": "abc123..."
+    },
+    "src/utils.py": {
+      "sha256": "def456..."
+    }
+  }
+}
+```
+
+Manifest 可以保存在：
+
+```text
+/Users/me/project/.sync-manifest.json
+```
+
+它代表：
+
+> 上一次成功同步完成后，Remote 应该对应的 Local 状态。
+
+---
+
+## 第一次同步
+
+第一次运行时，Remote 可能和 Local 不一致。
+
+执行一次 Initial Reconciliation：
+
+```text
+扫描 Local
+→ 扫描 Remote
+→ 删除 Remote 中 Local 不存在的文件
+→ 上传所有 Local 文件
+→ 生成 Manifest
+→ 上传 Manifest
+```
+
+完成后：
+
+```text
+Remote == Local
+```
+
+第一次同步完成后，不需要每次重新全量上传。
+
+---
+
+## 后续同步
+
+每次 Agent 修改 Local 后：
+
+1. 读取上一次 Manifest。
+2. 扫描 Local。
+3. 计算当前文件 checksum。
+4. 比较 Local 与 Manifest。
+5. 上传新增文件。
+6. 覆盖上传修改文件。
+7. 删除 Local 已删除的 Remote 文件。
+8. 所有操作成功后，更新 Manifest。
+
+比较规则：
+
+```text
+Local 有，Manifest 没有
+→ 新文件
+→ Upload
+
+Local 和 Manifest 都有，但 checksum 不同
+→ 修改文件
+→ Upload with overwrite
+
+Manifest 有，Local 没有
+→ 删除文件
+→ Delete Remote
+
+checksum 相同
+→ 未修改
+→ Skip
+```
+
+---
+
+## 每次迭代流程
+
+完整迭代过程：
+
+```text
+1. Agent 修改 Local
+2. 执行 Sync
+3. 确认 Sync 成功
+4. 触发 Databricks Remote Run
+5. 等待运行结束
+6. 获取日志、错误和输出
+7. Agent 根据结果修改 Local
+8. 重复以上流程
+```
+
+伪代码：
+
+```python
+while True:
+    agent_modify_local()
+
+    sync_result = sync_local_to_workspace()
+
+    if not sync_result.success:
+        report_sync_error()
+        continue
+
+    run_result = run_remote_job()
+
+    if run_result.success:
+        break
+
+    agent_fix_local(run_result.error)
+```
+
+---
+
+## Sync 与 Run 的边界
+
+Sync 和 Remote Run 应当是两个独立步骤。
+
+推荐接口：
+
+```python
+sync_result = sync_project()
+
+if sync_result.success:
+    run_result = run_remote()
+```
+
+不要在同步未完成时启动运行。
+
+否则可能出现：
+
+```text
+部分文件已更新
+部分文件还未更新
+Remote Run 已经启动
+```
+
+这样 Remote 会运行一个不一致的代码版本。
+
+---
+
+## 推荐同步顺序
+
+```text
+计算差异
+→ 上传新增文件
+→ 上传修改文件
+→ 删除已删除文件
+→ 更新 Manifest
+→ 标记 Sync 成功
+→ Remote Run
+```
+
+Manifest 必须最后更新。
+
+如果上传过程中失败：
+
+```text
+不要更新 Manifest
+不要启动 Remote Run
+```
+
+下一次同步会重新处理未成功的变更。
+
+---
+
+## 删除操作
+
+删除文件时：
+
+```text
+Local 删除 src/old.py
+→ Sync 检测 Manifest 中存在、Local 中不存在
+→ 删除 Remote src/old.py
+```
+
+目录删除建议在文件删除完成后进行，并从最深层目录开始处理。
+
+不要删除 Remote 根目录。
+
+所有删除路径必须验证位于配置的 Remote Root 下。
+
+---
+
+## Ignore 规则
+
+不应同步以下 Local 内容：
+
+```text
+.git/
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.idea/
+.vscode/
+dist/
+build/
+```
+
+建议提供类似 `.gitignore` 的配置：
+
+```text
+.syncignore
+```
+
+示例：
+
+```text
+.git/
+.venv/
+__pycache__/
+*.pyc
+dist/
+build/
+```
+
+---
+
+## Remote Run
+
+同步完成后，可以触发：
+
+* Databricks Job
+* Databricks Workflow
+* Notebook Run
+* Python Wheel Task
+* Spark Python Task
+
+Remote Run 应返回：
+
+```text
+run_id
+status
+logs
+error_message
+output
+```
+
+Agent 根据错误内容继续修改 Local。
+
+---
+
+## 建议的命令接口
+
+```bash
+project-sync init
+```
+
+第一次同步并建立 Manifest。
+
+```bash
+project-sync sync
+```
+
+执行增量同步。
+
+```bash
+project-sync run
+```
+
+触发 Remote Run。
+
+```bash
+project-sync sync-run
+```
+
+先同步，成功后立即运行。
+
+```bash
+project-sync sync-run --watch
+```
+
+监听 Local 修改，自动执行：
+
+```text
+Change detected
+→ Sync
+→ Remote Run
+```
+
+---
+
+## 最适合当前场景的模式
+
+当前目标是 Agent 驱动的快速迭代，因此推荐：
+
+```text
+Initial Sync：一次全量对齐
+
+之后：
+Local 修改
+→ Manifest 增量同步
+→ Remote Run
+→ 获取错误
+→ Local 修改
+```
+
+不需要每次删除整个 Remote 目录，也不需要每次上传所有文件。
+
+只需要同步本次发生变化的文件。
+
+---
+
+## 关键限制
+
+Manifest 记录的是：
+
+```text
+上一次成功同步时 Remote 应有的状态
+```
+
+它不是 Remote 文件的实时 checksum。
+
+如果有人手动修改 Remote：
+
+```text
+Remote 内容可能和 Manifest 不一致
+```
+
+当前流程无法自动发现。
+
+因此必须遵守：
+
+```text
+不要直接修改 Remote
+所有修改都从 Local 同步
+```
+
+如有必要，可以提供一个 Full Reconcile 命令：
+
+```bash
+project-sync reconcile
+```
+
+它会重新扫描 Remote，并强制恢复为 Local 状态。
