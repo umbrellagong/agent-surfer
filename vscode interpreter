@@ -1,0 +1,176 @@
+ 在 VS Code 的 Notebook 场景里，**interpreter/kernel 的执行机制**可以总结成下面这套分层架构。
+
+## 1. VS Code 本体负责 Notebook 界面
+
+VS Code 自带 Notebook Core，所以它能：
+
+- 打开和编辑 `.ipynb`
+    
+- 渲染 Markdown、代码 Cell 和已有输出
+    
+- 提供 Run、Stop、Restart 等 UI
+    
+- 展示 Cell 的 `queued / running / completed / failed` 状态
+    
+
+但 VS Code 本体通常不直接执行 Python。
+
+## 2. Jupyter Extension 负责执行控制
+
+对于 Python Notebook，Microsoft Jupyter Extension 会注册一个 Notebook Controller，负责：
+
+- 发现和选择 Python kernel
+    
+- 启动或连接 kernel
+    
+- 维护 Cell 执行队列
+    
+- 将代码发送给 kernel
+    
+- 收集输出并映射回对应 Cell
+    
+- 处理中断、取消和重启
+    
+
+所以连续点击多个 Cell 时，通常是：
+
+```text
+Jupyter Extension 队列：
+Cell B → Cell C → Cell D
+
+Python Kernel：
+当前执行 Cell A
+```
+
+扩展一般一次只向 kernel 提交一个 Cell。A 完成后，再提交 B。
+
+## 3. Kernel 通常是一个长期运行的 Python 进程
+
+对 Python Notebook 来说，kernel 通常就是：
+
+```text
+Python process
+└── ipykernel
+    ├── 消息事件循环
+    ├── IPython 执行环境
+    ├── 共享 namespace
+    ├── 输出捕获
+    └── 中断与控制逻辑
+```
+
+它不是每个 Cell 启动一个新 Python 进程，而是同一个进程持续运行：
+
+```text
+Cell 1
+Cell 2
+Cell 3
+```
+
+因此变量可以跨 Cell 保留：
+
+```python
+# Cell 1
+x = 10
+```
+
+```python
+# Cell 2
+print(x)  # 10
+```
+
+## 4. Cell 是通过消息协议发送的
+
+Extension 不会直接调用 Python 函数，而是通过 Jupyter Messaging Protocol 发送：
+
+```text
+execute_request(code)
+```
+
+kernel 收到后，大致调用：
+
+```text
+IPython.run_cell(code)
+```
+
+然后返回：
+
+- 标准输出
+    
+- 错误
+    
+- 图片或富文本结果
+    
+- 执行完成状态
+    
+
+每次请求都有唯一 `msg_id`，因此 extension 能把输出归属到正确的 Cell。
+
+## 5. Kernel 同一时刻通常只执行一个主 Cell
+
+Kernel 协议层可以接收多个请求，但普通 Python kernel 的主执行流通常是串行的：
+
+```text
+Cell A：running
+Cell B：waiting
+Cell C：waiting
+```
+
+Cell 内部可以启动线程、进程、Spark job 或 GPU 任务，但对 kernel 来说，仍然是在执行一个 Cell 请求。
+
+## 6. Interrupt 是怎么实现的
+
+用户点击 Interrupt 时，Extension 通常做两件事：
+
+```text
+1. 中断当前 kernel execution
+2. 取消本地队列中尚未提交的 Cell
+```
+
+对于本地 kernel，中断最终通常类似：
+
+```text
+SIGINT → Python kernel → KeyboardInterrupt
+```
+
+`SIGINT` 不是一条 Python 命令，而是操作系统发给 Python 进程的信号。
+
+它只会中断当前执行，不会自动清空 kernel 已经收到的后续请求。因此 VS Code 把后续 Cell 保留在 extension 自己的队列里，才能在中断时一起清除。
+
+## 7. Restart 和 Interrupt 的区别
+
+```text
+Interrupt
+- 停止当前 Cell
+- 清空后续排队 Cell
+- kernel 仍然存在
+- 变量通常保留
+
+Restart
+- 停止当前 Cell
+- 清空队列
+- 杀掉旧 kernel
+- 创建新 kernel
+- 所有变量和内存状态丢失
+```
+
+## 最终心智模型
+
+```text
+VS Code Notebook UI
+        ↓
+Jupyter Extension / Notebook Controller
+        ↓
+本地 Cell Execution Queue
+        ↓ 一次提交一个
+Jupyter execute_request
+        ↓
+ipykernel Python process
+        ↓
+IPython.run_cell()
+        ↓
+输出和状态返回 VS Code
+```
+
+一句话概括：
+
+> VS Code 负责 Notebook 界面，Jupyter Extension 负责排队和调度，ipykernel 这个长期运行的 Python 进程负责真正执行代码。
