@@ -1,0 +1,357 @@
+可以把我们讨论的方案总结成一个 **Active Memory Monitor Agent（主动记忆监控 Agent）**：
+
+### 核心目标
+
+解决主 Coding Agent 的 memory maintenance 容易被任务淹没的问题。
+
+不是继续强化：
+
+> “完成任务后一定要记得更新 memory。”
+
+而是把 **做任务** 和 **维护记忆** 拆成两个独立目标，并在 runtime 层保证每个 turn 都执行 memory maintenance。
+
+```text
+User
+ │
+ ▼
+┌──────────────────────────┐
+│ Main Copilot Agent       │
+│                          │
+│ coding / debugging /     │
+│ testing / tool use       │
+└────────────┬─────────────┘
+             │
+             │ turn finished
+             ▼
+        agentStop Hook
+             │
+             │ deterministic trigger
+             ▼
+┌──────────────────────────┐
+│ Active Memory Agent      │
+│                          │
+│ observe → reflect →      │
+│ reconcile → persist      │
+└────────────┬─────────────┘
+             │
+             ▼
+        Memory Store
+```
+
+关键性质是：
+
+**主 Agent 可以忘记维护 memory，但 runtime 不会忘记触发 Memory Agent。**
+
+---
+
+### Memory Agent 是什么
+
+它不是 GitHub 内置的特殊 agent，而是我们定义的 specialized agent。
+
+可以使用另一个 **Copilot SDK session** 来实现，底层继续复用 Copilot 已经提供的 agent loop：
+
+```text
+LLM
+ ↓
+choose tool
+ ↓
+execute tool
+ ↓
+observe result
+ ↓
+LLM
+ ↓
+...
+ ↓
+finish
+```
+
+因此不需要自己重新实现完整 ReAct/tool-calling control loop。
+
+Memory Agent 的 primary objective 只有：
+
+> **观察主 Agent 最近完成的 activity，判断其中是否产生值得长期保存的信息，并维护 memory。**
+
+这解决的是 **goal isolation**。
+
+---
+
+### Memory Agent 的工具应该被严格限制
+
+主 Copilot 可能拥有：
+
+```text
+read
+edit
+grep
+shell
+git
+web
+...
+```
+
+Memory Agent 不需要这么大的 action space。
+
+可以只给：
+
+```text
+repo_read
+
+memory_search
+memory_add
+memory_update
+memory_invalidate
+```
+
+因此：
+
+\[
+A_{memory} \subset A_{coding}
+\]
+
+它既不能跑去修改产品代码，也不应该接管 coding task。
+
+这形成三个 isolation：
+
+```text
+Goal isolation
+   → 只负责 memory
+
+Context isolation
+   → 主要看到 latest activity + relevant memory
+
+Action-space isolation
+   → 只有 memory 相关 tools
+```
+
+---
+
+### 每个 turn 怎么工作
+
+每当主 Agent 完成一个 turn：
+
+```text
+Turn N
+ │
+ ├─ reasoning
+ ├─ read
+ ├─ edit
+ ├─ test
+ └─ final response
+       │
+       ▼
+    agentStop
+       │
+       ▼
+ Memory Agent
+```
+
+hook 把这个 turn 新产生的 activity 交给 Memory Agent。
+
+最好维护一个 cursor：
+
+```text
+transcript
+
+Turn 1
+Turn 2
+Turn 3
+────────────── cursor
+Turn 4             ← 本次只处理这里
+────────────── new cursor
+```
+
+避免每次重新处理整个 conversation。
+
+---
+
+### Memory Agent 做的不是 summary
+
+这一点很重要。
+
+它不是：
+
+```text
+Turn
+ ↓
+summarize
+ ↓
+append MEMORY.md
+```
+
+而应该是：
+
+```text
+                    ┌─ irrelevant → ignore
+                    │
+Activity → Reflect ─┼─ new fact → ADD
+                    │
+                    ├─ existing fact changed → UPDATE
+                    │
+                    ├─ duplicate → MERGE/IGNORE
+                    │
+                    └─ obsolete → INVALIDATE
+```
+
+也就是说它维护的是一个 **evolving knowledge state**。
+
+比较值得保存的是：
+
+```text
+architectural decisions
+repo conventions
+user/workflow preferences
+non-obvious system behavior
+important constraints
+failed approaches + why they failed
+recurring workflows
+```
+
+而不是：
+
+```text
+刚才打开了 foo.ts
+刚才跑了 pytest
+刚才修改了第 37 行
+```
+
+后者属于 activity log，不属于 durable memory。
+
+---
+
+### Memory 最好是结构化 store
+
+MVP 可以从 `MEMORY.md` 开始。
+
+成熟一些则可以：
+
+```json
+{
+  "id": "mem_184",
+  "type": "decision",
+  "scope": "repository",
+  "content": "Integration tests should use the real AuthService.",
+  "reason": "Mocking previously hid token serialization failures.",
+  "confidence": 0.91,
+  "evidence": ["..."],
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
+
+Memory Agent 不需要重写整个数据库，而是产生：
+
+```text
+ADD
+UPDATE
+MERGE
+INVALIDATE
+```
+
+operations。
+
+---
+
+### 还需要另一半：Retrieval
+
+只有主动写 memory 还不完整。
+
+最终 loop 应该是：
+
+```text
+             ┌──────────────────────┐
+             │                      │
+             ▼                      │
+       User Prompt                  │
+             │                      │
+             ▼                      │
+      Memory Retrieval              │
+             │                      │
+      relevant memories             │
+             │                      │
+             ▼                      │
+       Main Copilot                 │
+             │                      │
+       autonomous work              │
+             │                      │
+             ▼                      │
+         agentStop                  │
+             │                      │
+             ▼                      │
+      Memory Monitor                │
+             │                      │
+     reconcile memories             │
+             │                      │
+             ▼                      │
+        Memory Store ───────────────┘
+```
+
+因此它本质上是一个闭环：
+
+\[
+\text{Retrieve}
+\rightarrow
+\text{Act}
+\rightarrow
+\text{Observe}
+\rightarrow
+\text{Reflect}
+\rightarrow
+\text{Update}
+\rightarrow
+\text{Retrieve}
+\]
+
+---
+
+### 和 LangGraph / Copilot 的关系
+
+我们前面讨论出的架构原则其实很清楚：
+
+> **Turn 内部保持 Copilot 的高自由度；turn 边界使用 deterministic orchestration。**
+
+即：
+
+```text
+      MICRO CONTROL
+      autonomous
+           │
+           ▼
+┌──────────────────────┐
+│ Main Copilot         │
+│ LLM ↔ tools ↔ LLM   │
+└──────────┬───────────┘
+           │ agentStop
+═══════════╪════════════════
+           │
+      MACRO CONTROL
+      deterministic
+           │
+           ▼
+┌──────────────────────┐
+│ Memory Agent         │
+│ LLM ↔ memory tools  │
+└──────────────────────┘
+```
+
+所以不需要为了 memory 把整个 Copilot 改造成 LangGraph。
+
+**Copilot 负责 micro-level autonomous control loop；你的 hook/orchestrator 负责 macro-level state machine。**
+
+第一版甚至只需要：
+
+```text
+agentStop
+   ↓
+hook script
+   ↓
+resume Memory Copilot SDK session
+   ↓
+send latest turn
+   ↓
+Memory Agent updates MEMORY.md
+```
+
+先验证“独立 Memory Agent 是否显著改善记忆质量”，之后再逐步加入 structured memory、memory tools、retrieval、confidence/evidence、deduplication 等机制。
+
+从架构角度看，这已经不再是简单的 **“Copilot memory prompt”**，而是一个外挂在 Coding Agent 周围的 **持续观察、反思和维护长期状态的 memory sidecar**。
