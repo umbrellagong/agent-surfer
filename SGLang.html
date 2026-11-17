@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Copilot, SGLang &amp; RL Training — Six Cards</title>
+<style>
+
+    :root {
+      color-scheme: light;
+      --canvas: #ffffff;
+      --fg: #171717;
+      --muted: #71717a;
+      --muted-soft: #8a8a91;
+      --border: #e4e4e7;
+      --divider: #e6e6e9;
+      --surface: #f4f4f5;
+      --blue-bg: rgba(59,130,246,.08);
+      --purple-bg: rgba(139,92,246,.09);
+      --purple-soft: rgba(139,92,246,.08);
+      --orange-bg: rgba(234,179,8,.13);
+      --blue: #2563eb;
+      --green: #168553;
+    }
+    * {box-sizing: border-box;}
+    html { -webkit-font-smoothing: antialiased; }
+    body {margin:0; background: var(--canvas); color:var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size:14px; line-height:1.43;}
+    main {width:min(550px, calc(100vw - 32px)); margin:36px auto 72px;}
+    .section { margin-bottom: 31px; }
+    .section-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:0 0 8px; }
+    h2 {font-size:19px; font-weight:650; letter-spacing:-.45px; margin:0; line-height:1.3;}
+    .subhead {font-size:12px; color:var(--muted); flex-shrink:0;}
+    .card {border:1px solid var(--border); border-radius:16px; padding:12px; display:flex; flex-direction:column; gap:12px; background:#fff;}
+    .panel {border-radius:10px; padding:12px; min-width:0;}
+    .panel.blue {background:var(--blue-bg);}
+    .panel.purple {background:var(--purple-bg);}
+    .panel.purple-soft {background:var(--purple-soft);}
+    .panel.orange {background:var(--orange-bg);}
+    .panel.gray {background:var(--surface);}
+    .panel-label {font-size:12px; color:var(--muted); font-weight:650; margin-bottom:4px; line-height:1.4;}
+    .panel p {margin:0;}
+    .headline {font-size:14px; font-weight:650; letter-spacing:-.06px;}
+    .text-sm {font-size:14px;}
+    .text-xs {font-size:12px;}
+    .muted {color:var(--muted);}
+    .stack {display:flex; flex-direction:column; gap:8px;}
+    .stack-sm {display:flex; flex-direction:column; gap:4px;}
+    .middle-arrow {display:flex; justify-content:center; align-items:center; gap:8px; color:var(--muted); font-size:12px; height:22px;}
+    .title-small {font-size:14px; font-weight:650; line-height:20px;}
+    .prompt-block {display:flex; flex-direction:column; gap:8px;}
+    .prompt-lines {padding:12px; border-radius:10px; background:var(--surface);}
+    .prompt-line {display:flex; align-items:center; gap:9px; min-height:26px;}
+    .prompt-line .ico { flex:none; }
+    .prompt-line .content {flex:1; min-width:0;}
+    .prompt-line .small-title {font-size:12px; font-weight:650;}
+    .prompt-line .detail {font-size:12px; color:var(--muted); margin-top:1px;}
+    .hr {height:1px; background:var(--divider); margin:7px 0;}
+    .action {border-radius:8px; padding:8px 10px; display:flex; justify-content:center; align-items:center; gap:8px; min-height:37px; font-size:14px; font-weight:650; text-align:center;}
+    .action.blue {background:var(--blue-bg);}
+    .action.purple {background:var(--purple-bg);}
+    .action .ico {color:var(--muted);}
+    .action.blue .ico {color:var(--blue);}
+    .icon-title {display:flex; gap:8px; align-items:center;}
+    .ico {width:18px; height:18px; flex:none; color:var(--muted); stroke:currentColor; fill:none; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; vertical-align:middle;}
+    .ico.lg {width:22px;height:22px;}
+    .ico.small {width:16px;height:16px;}
+    .exec-steps {display:flex; align-items:center; gap:8px;}
+    .exec-step {flex:1; background:var(--surface); border-radius:8px; padding:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; min-height:83px; text-align:center;}
+    .exec-step .caption {font-size:11px; color:var(--muted);}
+    .exec-step .main {font-size:12px; font-weight:650;}
+    .exec-arrow {flex:none; width:18px; height:18px;}
+    .kv {display:flex; gap:4px; margin:9px 0 5px;}
+    .kv .page {height:23px; flex:1; min-width:0; border-radius:4px; background:#C5B4F5; border:1px solid #9475DC;}
+    .kv .page.reused {background:#B7D4FA; border-color:#6898DA;}
+    .kv .page.new {background:#F5D49A; border-color:#C59A5A;}
+    .legend {display:flex; flex-wrap:wrap; gap:12px; margin-top:8px;}
+    .legend-item {display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted);}
+    .swatch {width:10px;height:10px;border-radius:2px;background:#B7D4FA;}
+    .swatch.new {background:#F5D49A;}
+    .callout-title {font-size:14px; font-weight:650;}
+    .panel .indent {margin-top:3px;}
+    .panel.blue .blue-title {color:#2563eb;}
+    .prompt-history .line {font-size:14px; padding:1px 0;}
+    .prompt-history .hr {margin:4px 0;}
+    .prompt-history .prompt-line {min-height:31px;}
+    .prompt-history .detail {line-height:1.4;}
+    .cache-chip {margin-left:auto; flex:none; border:1px solid #b6c9f7; background:#fff; color:#356fc0; border-radius:999px; padding:2px 7px; font-size:10px; font-weight:650; white-space:nowrap;}
+    .new-chip {color:#a16207; border-color:#eac889; background:#fff9ed;}
+    .tool-result-code {font-size:12px; margin-top:2px; padding:8px 9px; background:rgba(255,255,255,.65); border-radius:6px; line-height:1.5;}
+    .tool-result-code code {font-size:12px;}
+    .prompt-footer {font-size:11px; color:var(--muted); margin-top:3px;}
+    .bottom-note {color:var(--muted); font-size:12px; margin:12px 0 0; line-height:1.5;}
+    code {font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size:.91em;}
+    @media (max-width:460px) { main{width:calc(100% - 20px);margin-top:20px;} h2{font-size:17px;} .subhead{font-size:11px;} .card{padding:10px;} .action{font-size:12px;} }
+    @media print { main{margin:0; width:550px;} .section {break-inside:avoid; page-break-inside:avoid; margin-bottom:25px;} @page {margin:12mm;} }
+  
+/* -------- Scoped styles for ecosystem cards -------- */
+.ecosystem {
+    --fg:#171717; --muted:#71717a; --border:#e4e4e7; --divider:#e6e6e9;
+    --surface:#f4f4f5; --blue:#2563eb; --blue-bg:rgba(59,130,246,.08);
+    --purple:#7654bd; --purple-bg:rgba(139,92,246,.09);
+    --orange-bg:rgba(234,179,8,.13); --green:#168553;
+  }
+.ecosystem {width:min(550px, calc(100vw - 32px)); margin:36px auto 60px;}
+.ecosystem section {margin:0 0 30px; break-inside:avoid;}
+.ecosystem .heading {display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px;}
+.ecosystem h2 {font-size:19px; line-height:1.3; font-weight:650; letter-spacing:-.45px; margin:0;}
+.ecosystem .subhead {color:var(--muted); font-size:12px; flex-shrink:0;}
+.ecosystem .card {border:1px solid var(--border); border-radius:16px; padding:12px; display:flex; flex-direction:column; gap:12px; background:#fff;}
+.ecosystem .panel {border-radius:10px; padding:12px;}
+.ecosystem .blue {background:var(--blue-bg);}
+.ecosystem .purple {background:var(--purple-bg);}
+.ecosystem .orange {background:var(--orange-bg);}
+.ecosystem .gray {background:var(--surface);}
+.ecosystem .tiny {font-size:11px; color:var(--muted); line-height:1.45;}
+.ecosystem .small {font-size:12px; color:var(--muted);}
+.ecosystem .label {font-size:12px; color:var(--muted); font-weight:650; margin-bottom:5px;}
+.ecosystem .title {font-size:14px; font-weight:650;}
+.ecosystem .row {display:flex; align-items:center; gap:8px;}
+.ecosystem .center {justify-content:center; text-align:center;}
+.ecosystem .separator {height:1px; background:var(--divider); margin:6px 0;}
+.ecosystem .icon {width:18px; height:18px; flex:none; color:var(--muted); fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round;}
+.ecosystem .chip {display:inline-flex; align-items:center; border:1px solid #ded2f8; border-radius:999px; color:#6d50a1; background:#fff; padding:2px 8px; font-size:10px; font-weight:650; white-space:nowrap;}
+.ecosystem .miles-boundary {border:1px solid #dfd5fa; border-radius:12px; background:rgba(139,92,246,.065); padding:12px; display:flex; flex-direction:column; gap:11px;}
+.ecosystem .miles-heading {display:flex; align-items:center; gap:7px;}
+.ecosystem .miles-heading .title {font-size:16px;}
+.ecosystem .miles-heading .chip {margin-left:auto;}
+.ecosystem .miles-control {border-radius:9px; background:rgba(255,255,255,.83); border:1px solid #e6dcfa; padding:11px;}
+.ecosystem .control-line {display:flex; gap:7px; margin-top:8px; align-items:flex-start;}
+.ecosystem .control-key {width:91px; flex:none; font-size:11px; color:#654c91; font-weight:650;}
+.ecosystem .control-values {font-size:12px; color:#36323d;}
+.ecosystem .two-col {display:grid; grid-template-columns:1fr 1fr; gap:9px;}
+.ecosystem .lane {border:1px solid #e2d8fa; background:#fff; border-radius:10px; padding:10px; min-width:0;}
+.ecosystem .lane-title {font-size:11px; font-weight:700; color:#7155a1; letter-spacing:.15px; margin-bottom:7px;}
+.ecosystem .mini-node {border-radius:8px; padding:10px 7px; text-align:center; display:flex; flex-direction:column; gap:3px; align-items:center; justify-content:center; min-height:78px;}
+.ecosystem .mini-node strong {font-size:13px; line-height:1.25;}
+.ecosystem .mini-node span {font-size:11px; color:#66616e; line-height:1.35;}
+.ecosystem .mini-node.harness {background:#eef5ff; border:1px solid #d3e3ff;}
+.ecosystem .mini-node.sglang {background:#f3efff; border:1px solid #e0d4ff; min-height:133px;}
+.ecosystem .mini-node.train {background:#f3efff; border:1px solid #e0d4ff; min-height:233px;}
+.ecosystem .model-subnode {width:100%; border-radius:7px; background:#fff; border:1px solid #dfd4fb; padding:7px 5px; margin-top:6px; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:2px;}
+.ecosystem .model-subnode strong {font-size:11px; color:#5d438e;}
+.ecosystem .model-subnode span {font-size:10px; color:#72707a;}
+.ecosystem .model-subnode .model-hint {font-size:9px; color:#8b8297;}
+.ecosystem .down {text-align:center; color:#79717f; height:22px; display:flex; align-items:center; justify-content:center;}
+.ecosystem .down .icon {width:16px; height:16px;}
+.ecosystem .flow-box {border-radius:9px; background:rgba(255,255,255,.86); border:1px solid #e6dcfa; padding:10px; font-size:12px;}
+.ecosystem .flow-line {display:flex; align-items:baseline; gap:8px; padding:4px 0;}
+.ecosystem .flow-line+.flow-line {border-top:1px solid #eee7fa;}
+.ecosystem .flow-line strong {color:#624a91; font-size:11px; min-width:94px;}
+.ecosystem .flow-line span {flex:1;}
+.ecosystem .action {border-radius:8px; padding:9px 11px; min-height:38px; display:flex; justify-content:center; align-items:center; gap:8px; text-align:center; background:var(--purple-bg); font-weight:650; font-size:13px;}
+.ecosystem .note {color:var(--muted); font-size:11px; line-height:1.5;}
+.ecosystem .layer-row {display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+.ecosystem .layer {border-radius:9px; padding:12px 10px; text-align:center; border:1px solid var(--border); background:var(--surface); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; min-height:64px;}
+.ecosystem .layer strong {font-size:13px;}
+.ecosystem .layer small {font-size:11px; color:var(--muted); line-height:1.35;}
+.ecosystem .layer.top {background:var(--purple-bg); border-color:#e0d8f5; min-height:77px;}
+.ecosystem .layer.pytorch {background:var(--blue-bg); border-color:#cfe0fa;}
+.ecosystem .layer.ptx {background:#eaf2ff; border-color:#c6dcff;}
+.ecosystem .layer.gpu {background:#edf8f1; border-color:#c6e8d1;}
+.ecosystem .layer-arrow {display:flex; align-items:center; justify-content:center; gap:8px; color:var(--muted); height:15px; font-size:11px;}
+.ecosystem .layer-arrow .icon {height:15px; width:15px;}
+.ecosystem .code-path {border-radius:9px; background:var(--surface); padding:11px; display:flex; flex-direction:column; gap:8px;}
+.ecosystem .footnote {padding:0 1px; color:var(--muted); font-size:11px; line-height:1.5;}
+.ecosystem .badge-spot {font-size:10px; color:#6d50a1; border-radius:99px; padding:3px 8px; background:#fff; border:1px solid #e0d7fa; white-space:nowrap;}
+@media  (max-width:460px)  {.ecosystem {width:calc(100vw - 20px); margin-top:20px;}
+.ecosystem h2 {font-size:17px}
+.ecosystem .card {padding:10px}
+.ecosystem .control-key {width:77px}
+.ecosystem .two-col {gap:6px}
+.ecosystem .lane {padding:8px}
+.ecosystem .flow-line {display:block}
+.ecosystem .flow-line strong {display:block}
+.ecosystem .mini-node.train {min-height:233px}}
+@media  print  {.ecosystem {width:550px; margin:0}
+.ecosystem .card {page-break-inside:avoid}
+.ecosystem section {page-break-inside:avoid}}
+
+/* Combined page framing only; original card styles stay intact. */
+.page-title { margin-bottom: 24px; }
+.page-title h1 { font-size:21px; line-height:1.3; letter-spacing:-.5px; font-weight:700; margin:0 0 5px; }
+.page-title p { font-size:12px; color:#71717a; margin:0; }
+.part-divider { margin:33px 0 22px; border-top:1px solid #e4e4e7; padding-top:20px; }
+.part-divider .kicker { color:#7a56bf; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; }
+.part-divider h3 { font-size:16px; margin:5px 0 0; line-height:1.35; letter-spacing:-.25px; }
+.ecosystem { width:100%; margin:0; }
+.ecosystem section { margin-bottom:31px; }
+.ecosystem .note { font-size:11px; }
+@media print { .page-title {margin-bottom:14px;} .part-divider {break-after:avoid;page-break-after:avoid;} .ecosystem { width:100%; margin:0; } }
+</style>
+</head>
+<body>
+<svg aria-hidden="true" height="0" style="position:absolute; overflow:hidden" width="0" xmlns="http://www.w3.org/2000/svg">
+<symbol id="i-file-text" viewbox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"></path><path d="M14 2v6h6M8 13h8M8 17h8"></path></symbol>
+<symbol id="i-code" viewbox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6M14.5 4l-5 16"></path></symbol>
+<symbol id="i-message-circle" viewbox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"></path></symbol>
+<symbol id="i-wrench" viewbox="0 0 24 24"><path d="M14.7 6.3a5 5 0 0 0-6.4 6.4L3 18a2 2 0 0 0 3 3l5.3-5.3a5 5 0 0 0 6.4-6.4L14 13l-3-3z"></path></symbol>
+<symbol id="i-arrow-down" viewbox="0 0 24 24"><path d="M12 5v14m-7-7 7 7 7-7"></path></symbol>
+<symbol id="i-arrow-left" viewbox="0 0 24 24"><path d="M19 12H5m7 7-7-7 7-7"></path></symbol>
+<symbol id="i-arrow-right" viewbox="0 0 24 24"><path d="M5 12h14m-7-7 7 7-7 7"></path></symbol>
+<symbol id="i-send" viewbox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></symbol>
+<symbol id="i-cpu" viewbox="0 0 24 24"><rect height="16" rx="2" width="16" x="4" y="4"></rect><rect height="6" rx="1" width="6" x="9" y="9"></rect><path d="M9 1v3m6-3v3M9 20v3m6-3v3M20 9h3m-3 5h3M1 9h3m-3 5h3"></path></symbol>
+<symbol id="i-play" viewbox="0 0 24 24"><path d="m8 5 12 7-12 7z"></path></symbol>
+<symbol id="i-database" viewbox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14a9 3 0 0 0 18 0V5M3 12a9 3 0 0 0 18 0"></path></symbol>
+<symbol id="i-check-circle" viewbox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="m8 12 3 3 5-6"></path></symbol>
+<symbol id="i-plus-circle" viewbox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v8m-4-4h8"></path></symbol>
+</svg>
+<svg aria-hidden="true" height="0" style="position:absolute;overflow:hidden" width="0" xmlns="http://www.w3.org/2000/svg">
+<symbol id="eco-i-branch" viewbox="0 0 24 24"><path d="M6 3v12a6 6 0 0 0 6 6h1"></path><circle cx="6" cy="3" r="2"></circle><circle cx="18" cy="6" r="2"></circle><circle cx="15" cy="21" r="2"></circle><path d="M6 9a6 6 0 0 0 6 6h2a4 4 0 0 0 4-4V8"></path></symbol>
+<symbol id="eco-i-cpu" viewbox="0 0 24 24"><rect height="16" rx="2" width="16" x="4" y="4"></rect><rect height="6" rx="1" width="6" x="9" y="9"></rect><path d="M9 1v3m6-3v3M9 20v3m6-3v3M20 9h3m-3 5h3M1 9h3m-3 5h3"></path></symbol>
+<symbol id="eco-i-arrow-down" viewbox="0 0 24 24"><path d="M12 5v14m-7-7 7 7 7-7"></path></symbol>
+<symbol id="eco-i-layers" viewbox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5Z"></path><path d="m3 12 9 5 9-5M3 17l9 5 9-5"></path></symbol>
+<symbol id="eco-i-check" viewbox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="m8 12 3 3 5-6"></path></symbol>
+</svg>
+<main>
+  <header class="page-title"><h1>Copilot → SGLang → RL Training</h1><p>Six cards · Agent workflow, inference runtime, RL architecture and GPU software stack</p></header>
+<section class="section" id="step-1">
+<div class="section-heading"><h2>1. User Request → Harness</h2><span class="subhead">Build Prompt #1</span></div>
+<div class="card">
+<div class="panel blue stack-sm">
+<div class="panel-label">USER TYPES IN COPILOT</div>
+<div class="headline">“Fix the login timeout issue.”</div>
+</div>
+<div class="middle-arrow"><svg class="ico small"><use href="#i-arrow-down"></use></svg>Agent Harness organizes context</div>
+<div class="prompt-block">
+<div class="title-small">Prompt #1</div>
+<div class="prompt-lines">
+<div class="prompt-line"><svg class="ico"><use href="#i-file-text"></use></svg><div class="content"><div class="small-title">System Instructions</div><div class="detail">You are a coding assistant...</div></div></div>
+<div class="hr"></div>
+<div class="prompt-line"><svg class="ico"><use href="#i-code"></use></svg><div class="content"><div class="small-title">Editor Context</div><div class="detail">src/login.ts — current code</div></div></div>
+<div class="hr"></div>
+<div class="prompt-line"><svg class="ico"><use href="#i-message-circle"></use></svg><div class="content"><div class="small-title">User: Fix login timeout</div></div></div>
+<div class="hr"></div>
+<div class="prompt-line"><svg class="ico"><use href="#i-wrench"></use></svg><div class="content"><div class="small-title">Tools: read_file, edit_file</div></div></div>
+</div>
+</div>
+<div class="action blue"><svg class="ico"><use href="#i-send"></use></svg>Send Prompt #1 to SGLang Server</div>
+</div>
+</section>
+<section class="section" id="step-2">
+<div class="section-heading"><h2>2. SGLang Server</h2><span class="subhead">First Inference</span></div>
+<div class="card">
+<div class="panel purple stack-sm"><div class="panel-label">INCOMING REQUEST</div><div class="headline">Prompt #1</div></div>
+<div class="stack">
+<div class="title-small">Inference Execution</div>
+<div class="exec-steps">
+<div class="exec-step"><svg class="ico"><use href="#i-cpu"></use></svg><span class="main">Prefill</span><span class="caption">Compute K/V</span></div>
+<svg class="ico exec-arrow"><use href="#i-arrow-right"></use></svg>
+<div class="exec-step"><svg class="ico"><use href="#i-play"></use></svg><span class="main">Decode</span><span class="caption">Generate tokens</span></div>
+</div>
+</div>
+<div class="panel purple-soft stack-sm">
+<div class="icon-title"><svg class="ico"><use href="#i-database"></use></svg><span class="headline">Paged KV Cache</span></div>
+<div class="kv">
+<span class="page"></span><span class="page"></span><span class="page"></span><span class="page"></span><span class="page"></span><span class="page"></span><span class="page"></span><span class="page"></span><span class="page"></span>
+</div>
+<div class="muted text-xs">Allocate KV pages; retain reusable prefix</div>
+</div>
+<div class="panel gray stack-sm"><div class="panel-label">MODEL OUTPUT</div><div class="text-sm" style="font-weight:650">Tool Call: <code>read_file("src/api/client.ts")</code></div></div>
+<div class="action purple"><svg class="ico"><use href="#i-arrow-left"></use></svg>Return Tool Call to Harness</div>
+</div>
+</section>
+<section class="section" id="step-3">
+<div class="section-heading"><h2>3. Agent Harness</h2><span class="subhead">Tool + Build Prompt #2</span></div>
+<div class="card">
+<div class="panel blue stack-sm"><div class="panel-label">EXECUTE TOOL</div><div class="headline"><code>read_file("src/api/client.ts")</code></div><div class="muted text-xs">Result: <code>timeout: 1000</code></div></div>
+<div class="middle-arrow"><svg class="ico small"><use href="#i-arrow-down"></use></svg>Append result to conversation</div>
+<div class="prompt-block">
+<div class="title-small">Prompt #2</div>
+<div class="panel blue prompt-history stack-sm">
+<div class="panel-label blue-title">PREVIOUS CONTEXT — REUSABLE PREFIX</div>
+<div class="prompt-line">
+<svg class="ico"><use href="#i-file-text"></use></svg>
+<div class="content"><div class="small-title">System Instructions</div><div class="detail">You are a coding assistant...</div></div>
+<span class="cache-chip">Reused</span>
+</div>
+<div class="hr"></div>
+<div class="prompt-line">
+<svg class="ico"><use href="#i-code"></use></svg>
+<div class="content"><div class="small-title">Editor Context</div><div class="detail">src/login.ts — current code</div></div>
+<span class="cache-chip">Reused</span>
+</div>
+<div class="hr"></div>
+<div class="prompt-line">
+<svg class="ico"><use href="#i-message-circle"></use></svg>
+<div class="content"><div class="small-title">User: Fix login timeout</div></div>
+<span class="cache-chip">Reused</span>
+</div>
+<div class="hr"></div>
+<div class="prompt-line">
+<svg class="ico"><use href="#i-wrench"></use></svg>
+<div class="content"><div class="small-title">Tools: read_file, edit_file</div></div>
+<span class="cache-chip">Reused</span>
+</div>
+<div class="hr"></div>
+<div class="prompt-line">
+<svg class="ico"><use href="#i-message-circle"></use></svg>
+<div class="content"><div class="small-title">Assistant Tool Call</div><div class="detail"><code>read_file("src/api/client.ts")</code></div></div>
+<span class="cache-chip">Reused*</span>
+</div>
+</div>
+<div class="panel orange stack-sm">
+<div class="panel-label">NEW CONTEXT — TOOL RESULT</div>
+<div class="prompt-line">
+<svg class="ico"><use href="#i-file-text"></use></svg>
+<div class="content"><div class="small-title">Tool: src/api/client.ts</div><div class="detail">Read result appended by Harness</div></div>
+<span class="cache-chip new-chip">New</span>
+</div>
+<div class="tool-result-code"><code>export const api = axios.create({<br/>  timeout: <strong>1000</strong>,<br/>});</code></div>
+</div>
+<div class="prompt-footer">* Cache reuse is illustrative and depends on matching token prefixes and cache retention.</div>
+</div>
+<div class="action blue"><svg class="ico"><use href="#i-send"></use></svg>Send Prompt #2 to SGLang Server</div>
+</div>
+</section>
+<section class="section" id="step-4">
+<div class="section-heading"><h2>4. SGLang Server</h2><span class="subhead">Second Inference</span></div>
+<div class="card">
+<div class="panel purple stack-sm"><div class="panel-label">INCOMING REQUEST</div><div class="headline">Prompt #2</div></div>
+<div class="stack">
+<div class="title-small">Prefix Cache Lookup</div>
+<div class="panel blue stack-sm">
+<div class="icon-title"><svg class="ico" style="color:var(--green)"><use href="#i-check-circle"></use></svg><span class="headline">Cache HIT — Matching Prefix</span></div>
+<div class="muted text-xs">Reuse existing KV pages for previous context</div>
+</div>
+<div class="panel orange stack-sm">
+<div class="icon-title"><svg class="ico"><use href="#i-plus-circle"></use></svg><span class="headline">Prefill New Tokens</span></div>
+<div class="muted text-xs">Tool result: timeout = 1000</div>
+</div>
+</div>
+<div class="panel purple-soft stack-sm">
+<div class="icon-title"><svg class="ico"><use href="#i-database"></use></svg><span class="headline">Paged KV Cache</span></div>
+<div class="kv">
+<span class="page reused"></span><span class="page reused"></span><span class="page reused"></span><span class="page reused"></span><span class="page reused"></span><span class="page reused"></span><span class="page reused"></span><span class="page new"></span><span class="page new"></span>
+</div>
+<div class="legend"><span class="legend-item"><span class="swatch"></span>Reused KV</span><span class="legend-item"><span class="swatch new"></span>New KV</span></div>
+</div>
+<div class="panel gray stack-sm"><div class="panel-label">DECODE → MODEL RESPONSE</div><div class="headline">Suggested fix: increase API timeout to 5000ms.</div></div>
+<div class="action purple"><svg class="ico"><use href="#i-arrow-left"></use></svg>Return Response to Harness → User</div>
+</div>
+</section>
+<p class="bottom-note">Illustrative workflow. A cache hit requires a matching token prefix and retained, accessible KV cache entries. The colored KV blocks represent conceptual pages, not measured page counts.</p>
+<div class="part-divider"><span class="kicker">Part II · Ecosystem</span><h3>Where SGLang fits in RL training and the GPU stack</h3></div>
+<div class="ecosystem">
+<section id="step-5">
+<div class="heading"><h2>5. SGLang in RL Training</h2><span class="subhead">System Architecture</span></div>
+<div class="card">
+<div class="miles-boundary">
+<div class="miles-heading"><svg class="icon"><use href="#eco-i-branch"></use></svg><div class="title">Miles</div><span class="chip">RL Training Framework</span></div>
+<div class="miles-control">
+<div class="label">RL Algorithm + Orchestration</div>
+<div class="control-line"><div class="control-key">RL objective</div><div class="control-values">PPO / GRPO · KL penalty · Clipping · Advantages</div></div>
+<div class="control-line"><div class="control-key">Execution</div><div class="control-values">Sync / Async · Reward · Weight Sync</div></div>
+</div>
+<div class="two-col">
+<div class="lane">
+<div class="lane-title">ROLLOUT / AGENT EXECUTION</div>
+<div class="mini-node harness"><strong>Agent Harness</strong><span>Prompt · Tools · Agent Loop</span></div>
+<div class="down"><svg class="icon"><use href="#eco-i-arrow-down"></use></svg></div>
+<div class="mini-node sglang"><strong>SGLang</strong><span>Inference · Batching<br/>Prefix KV Cache</span><div class="model-subnode"><strong>Inference Model</strong><span>Architecture + Weights</span><span class="model-hint">Rollout policy snapshot</span></div></div>
+</div>
+<div class="lane">
+<div class="lane-title">POLICY TRAINING</div>
+<div class="mini-node train"><svg class="icon"><use href="#eco-i-cpu"></use></svg><strong>Megatron-LM</strong><span>Model Layers · Forward<br/>Backward · Optimizer<br/>Distributed Training</span><div class="model-subnode"><strong>Trainable Model</strong><span>Architecture + Weights</span><span class="model-hint">Policy parameters updated</span></div></div>
+</div>
+</div>
+<div class="flow-box">
+<div class="flow-line"><strong>Rollout → Train</strong><span>Trajectories · Rewards · Advantages</span></div>
+<div class="flow-line"><strong>Train → Rollout</strong><span>Updated policy weights</span></div>
+</div>
+<div class="note">The model architecture is generally shared; weight versions may differ during async RL until the next sync. Agent Harness is used for agentic rollouts, not every RL workload.</div>
+</div>
+<div class="action"><svg class="icon"><use href="#eco-i-check"></use></svg>Miles coordinates rollout and policy optimization</div>
+</div>
+</section>
+<section id="step-6">
+<div class="heading"><h2>6. Shared GPU Software Stack</h2><span class="subhead">Under the Hood</span></div>
+<div class="card">
+<div class="panel purple">
+<div class="label">FRAMEWORKS</div>
+<div class="layer-row">
+<div class="layer top"><strong>SGLang</strong><small>Inference / Serving</small></div>
+<div class="layer top"><strong>Megatron-LM / Core</strong><small>Distributed Training</small></div>
+</div>
+</div>
+<div class="layer-arrow"><svg class="icon"><use href="#eco-i-arrow-down"></use></svg>Built on / integrated with</div>
+<div class="layer pytorch"><strong>PyTorch Ecosystem</strong><small>nn.Module · Tensors · Autograd · Distributed Primitives</small></div>
+<div class="layer-arrow"><svg class="icon"><use href="#eco-i-arrow-down"></use></svg>Dispatch to optimized GPU computation</div>
+<div class="code-path">
+<div class="label">GPU KERNEL PATHS (PARALLEL OPTIONS)</div>
+<div class="layer-row">
+<div class="layer"><strong>Triton Kernels</strong><small>GPU DSL + Compiler</small></div>
+<div class="layer"><strong>CUDA C++ Kernels</strong><small>NVCC / CUDA Libraries</small></div>
+</div>
+<div class="tiny">CUDA libraries can also contain precompiled GPU code; paths are not a strict one-to-one chain.</div>
+</div>
+<div class="layer-arrow"><svg class="icon"><use href="#eco-i-arrow-down"></use></svg>Typical NVIDIA kernel compilation path</div>
+<div class="layer ptx"><strong>PTX</strong><small>Virtual GPU Instruction Set / Intermediate Representation</small></div>
+<div class="layer-arrow"><svg class="icon"><use href="#eco-i-arrow-down"></use></svg>Compile / JIT for GPU architecture</div>
+<div class="layer"><strong>SASS / Cubin</strong><small>Architecture-specific GPU machine code</small></div>
+<div class="layer-arrow"><svg class="icon"><use href="#eco-i-arrow-down"></use></svg>Executed on</div>
+<div class="layer gpu"><strong>NVIDIA GPU</strong><small>SMs · Tensor Cores · HBM</small></div>
+<div class="footnote">Conceptual layering: Megatron and SGLang are PyTorch-based, but can invoke Triton, CUDA C++, and precompiled GPU libraries directly. PTX is an ISA/compilation intermediate—not a layer underneath the CUDA runtime.</div>
+</div>
+</section>
+</div>
+</main>
+</body>
+</html>
